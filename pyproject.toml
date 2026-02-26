@@ -3,4 +3,6 @@ name = "speedtest-servers"
 version = "0.1.0"
 description = "Fetch Speedtest.net server data by country/city pairs"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "speedtest-cli>=2.1.3",
+]
