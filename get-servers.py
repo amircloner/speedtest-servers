@@ -1,7 +1,8 @@
 import csv
-import requests
+import subprocess
 import json
 import time
+import urllib.parse
 
 city_pairs_file = 'country_city_pairs.csv'
 json_file_path = 'speedtest_servers.json'
@@ -20,6 +21,36 @@ def read_csv_to_set(csv_file_path):
     return country_city_set
 
 
+def fetch_url(url, retries=3):
+    """Fetch a URL using curl to avoid Python SSL/TLS fingerprinting issues."""
+    for attempt in range(retries):
+        try:
+            result = subprocess.run(
+                [
+                    'curl', '-s', '--max-time', '30',
+                    '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                           'AppleWebKit/537.36 (KHTML, like Gecko) '
+                           'Chrome/120.0.0.0 Safari/537.36',
+                    '-H', 'Accept: application/json, text/plain, */*',
+                    '-H', 'Accept-Language: en-US,en;q=0.9',
+                    '-H', 'Referer: https://www.speedtest.net/',
+                    '-w', '\n%{http_code}',
+                    url,
+                ],
+                capture_output=True, text=True, timeout=35,
+            )
+            # Last line is HTTP status code
+            lines = result.stdout.rsplit('\n', 1)
+            body = lines[0] if len(lines) > 1 else ''
+            status = int(lines[-1]) if lines[-1].isdigit() else 0
+            return status, body
+        except Exception as e:
+            print(f"  Attempt {attempt + 1} failed: {e}")
+            if attempt < retries - 1:
+                time.sleep(5)
+    return 0, ''
+
+
 def call_speedtest_api_for_pairs(pairs):
     filtered_servers = []
     seen_server_ids = set()
@@ -27,22 +58,27 @@ def call_speedtest_api_for_pairs(pairs):
     for country, city in pairs:
         print(f"Fetching data for {country}, {city}")
 
-        url = f"https://www.speedtest.net/api/js/servers?engine=js&https_functional=true&limit=100&search={city}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            servers = response.json()
-            
+        encoded_city = urllib.parse.quote(city)
+        url = f"https://www.speedtest.net/api/js/servers?engine=js&https_functional=true&limit=100&search={encoded_city}"
+
+        status, body = fetch_url(url)
+
+        if status == 200 and body:
+            try:
+                servers = json.loads(body)
+            except json.JSONDecodeError as e:
+                print(f"  JSON decode error for {country}, {city}: {e}")
+                continue
 
             for server in servers:
                 server_id = server.get('id')
                 if server_id and server_id not in seen_server_ids:
                     seen_server_ids.add(server_id)
                     filtered_servers.append(server)
-
         else:
-            print(f"Failed to fetch data for {country}, {city}")
+            print(f"  Failed to fetch data for {country}, {city} (HTTP {status})")
 
-        time.sleep(5)  # Wait for 1 minute before making the next call
+        time.sleep(5)
 
     return filtered_servers
 
