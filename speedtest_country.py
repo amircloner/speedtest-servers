@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Speedtest runner for all servers of a given country.
+Speedtest runner for all servers of a given country and/or sponsor.
 
 Usage:
     uv run python speedtest_country.py "Germany"
     uv run python speedtest_country.py "United States"
+    uv run python speedtest_country.py --sponsor "Melbicom"
+    uv run python speedtest_country.py "Germany" --sponsor "Melbicom"
 
 Results are written to:
     results/<country_code>.txt   – human-readable table
@@ -13,8 +15,10 @@ Results are written to:
 Requires: speedtest-cli  (added to pyproject.toml automatically)
 """
 
+import argparse
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -44,15 +48,30 @@ def load_db() -> dict:
         return json.load(f)
 
 
-def find_servers(db: dict, country_query: str) -> list[dict]:
-    """Return all servers matching the country name or 2-letter code."""
-    q = country_query.strip().lower()
-    matches = [
-        srv for srv in db["servers"].values()
-        if srv.get("country", "").lower() == q
-        or srv.get("cc", "").lower() == q
-    ]
-    return matches
+def find_servers(
+    db: dict,
+    country_query: str | None = None,
+    sponsor_query: str | None = None,
+) -> list[dict]:
+    """Return servers matching country name/code and/or sponsor (partial, case-insensitive)."""
+    servers = list(db["servers"].values())
+
+    if country_query:
+        q = country_query.strip().lower()
+        servers = [
+            srv for srv in servers
+            if srv.get("country", "").lower() == q
+            or srv.get("cc", "").lower() == q
+        ]
+
+    if sponsor_query:
+        pattern = re.compile(re.escape(sponsor_query.strip()), re.IGNORECASE)
+        servers = [
+            srv for srv in servers
+            if pattern.search(srv.get("sponsor", ""))
+        ]
+
+    return servers
 
 
 # ── single-server speedtest ──────────────────────────────────────────────────
@@ -116,30 +135,59 @@ def format_table(results: list[dict]) -> str:
 
 # ── main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: uv run python speedtest_country.py <country name or code>")
-        print('  e.g. uv run python speedtest_country.py "Germany"')
-        print('  e.g. uv run python speedtest_country.py DE')
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Run speedtests against Speedtest.net servers."
+    )
+    parser.add_argument(
+        "country",
+        nargs="?",
+        help="Country name or 2-letter code (e.g. Germany or DE)",
+    )
+    parser.add_argument(
+        "--sponsor", "-s",
+        default=None,
+        help="Filter servers by sponsor name (partial match, e.g. Melbicom)",
+    )
+    args = parser.parse_args()
 
-    country_query = " ".join(sys.argv[1:])
+    if not args.country and not args.sponsor:
+        parser.print_help()
+        sys.exit(1)
 
     db      = load_db()
-    servers = find_servers(db, country_query)
+    servers = find_servers(db, country_query=args.country, sponsor_query=args.sponsor)
 
     if not servers:
-        print(f'No servers found for "{country_query}" in db.json.')
-        print("Available countries (sample):", sorted({s["country"] for s in db["servers"].values()})[:10])
+        desc = ""
+        if args.country:  desc += f'country="{args.country}"'
+        if args.sponsor:  desc += (" " if desc else "") + f'sponsor="{args.sponsor}"'
+        print(f'No servers found for {desc} in db.json.')
+        if args.country:
+            print("Available countries (sample):", sorted({s["country"] for s in db["servers"].values()})[:10])
+        if args.sponsor:
+            sponsors = sorted({s["sponsor"] for s in db["servers"].values()})
+            sample = [sp for sp in sponsors if args.sponsor.lower() in sp.lower()][:10]
+            print("Similar sponsors:", sample or sponsors[:10])
         sys.exit(1)
 
-    # use the actual country name and cc from the first match
-    country_name = servers[0]["country"]
-    country_cc   = servers[0]["cc"]
-    print(f'Found {len(servers)} servers for {country_name} ({country_cc})')
+    # derive output file name from country cc or sponsor slug
+    if args.country:
+        country_cc = servers[0]["cc"]
+        tag = country_cc
+    else:
+        tag = re.sub(r"[^\w]+", "_", args.sponsor.strip()).strip("_")
+
+    if args.sponsor and args.country:
+        tag = f"{servers[0]['cc']}_{re.sub(r'[^\w]+', '_', args.sponsor.strip()).strip('_')}"
+
+    desc_parts = []
+    if args.country:  desc_parts.append(f"{servers[0]['country']} ({servers[0]['cc']})")
+    if args.sponsor:  desc_parts.append(f"sponsor={args.sponsor}")
+    print(f'Found {len(servers)} servers [{" | ".join(desc_parts)}]')
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    out_txt  = RESULTS_DIR / f"{country_cc}.txt"
-    out_json = RESULTS_DIR / f"{country_cc}.json"
+    out_txt  = RESULTS_DIR / f"{tag}.txt"
+    out_json = RESULTS_DIR / f"{tag}.json"
 
     # load existing results so we can resume
     existing: dict[str, dict] = {}
