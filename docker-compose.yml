@@ -1,14 +1,44 @@
 version: "3.9"
 
+# Factor X – Dev/prod parity:
+#   - same image used in dev and prod
+#   - env_file supplies Factor III config; override per environment
+#   - volumes mirror prod mounts locally
+
 services:
   speedtest-gui:
     build: .
     container_name: speedtest-gui
+    # Factor VII – Port binding: driven by APP_PORT env var
     ports:
-      - "5000:5000"
+      - "${APP_PORT:-5000}:${APP_PORT:-5000}"
     volumes:
-      # persist test results on host
+      # Factor IV – Backing services: db and results as external mounts
+      - ./db.json:/app/db.json:ro
       - ./results:/app/results
+    # Factor III – Config: load from .env file (never commit real secrets)
+    env_file:
+      - .env
     environment:
+      # These can be overridden here or in .env
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
+    # Factor IX – Disposability: fast healthcheck for orchestrators
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-5000}/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Factor XII – Admin processes: run one-off tasks with the same image
+  # Usage: docker compose run --rm get-servers
+  get-servers:
+    build: .
+    profiles: ["tools"]
+    volumes:
+      - ./db.json:/app/db.json
+      - ./country_city_pairs.csv:/app/country_city_pairs.csv:ro
+    env_file:
+      - .env
+    command: ["python", "get-servers.py"]
