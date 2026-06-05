@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speedtest GUI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1d2e 0%, #16213e 100%);
+      border-bottom: 1px solid #2d3748;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header .logo {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #63b3ed;
+      letter-spacing: -0.5px;
+    }
+    header .subtitle {
+      font-size: 0.85rem;
+      color: #718096;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+
+    /* ── Control Panel ── */
+    .panel {
+      background: #1a1d2e;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.75rem;
+    }
+    .panel h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #a0aec0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1.25rem;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 1rem;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.8rem;
+      color: #718096;
+      margin-bottom: 0.4rem;
+      font-weight: 500;
+    }
+    .field select {
+      width: 100%;
+      padding: 0.65rem 0.9rem;
+      background: #0f1117;
+      border: 1px solid #4a5568;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23718096' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      transition: border-color 0.2s;
+    }
+    .field select:focus {
+      outline: none;
+      border-color: #63b3ed;
+    }
+    .field select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-run {
+      padding: 0.65rem 1.75rem;
+      background: #3182ce;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn-run:hover:not(:disabled) { background: #2b6cb0; }
+    .btn-run:active:not(:disabled) { transform: scale(0.97); }
+    .btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Progress ── */
+    .progress-wrap {
+      display: none;
+      margin-bottom: 1.75rem;
+    }
+    .progress-wrap.active { display: block; }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .progress-label { font-size: 0.85rem; color: #a0aec0; }
+    .progress-count { font-size: 0.85rem; color: #63b3ed; font-weight: 600; }
+
+    .progress-bar-bg {
+      background: #2d3748;
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3182ce, #63b3ed);
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .current-server {
+      margin-top: 0.6rem;
+      font-size: 0.8rem;
+      color: #718096;
+      min-height: 1.1em;
+    }
+
+    /* ── Status log ── */
+    .log-box {
+      background: #0f1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      color: #68d391;
+      font-family: 'Courier New', monospace;
+      max-height: 110px;
+      overflow-y: auto;
+      margin-top: 1rem;
+    }
+    .log-box .log-err  { color: #fc8181; }
+    .log-box .log-warn { color: #f6ad55; }
+    .log-box .log-info { color: #63b3ed; }
+
+    /* ── Results table ── */
+    .results-panel { display: none; }
+    .results-panel.active { display: block; }
+
+    .results-panel h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #a0aec0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1.25rem;
+    }
+
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: #0f1117;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      text-align: center;
+    }
+    .card .card-label { font-size: 0.75rem; color: #718096; margin-bottom: 0.35rem; }
+    .card .card-value { font-size: 1.5rem; font-weight: 700; color: #63b3ed; }
+    .card .card-unit  { font-size: 0.7rem; color: #4a5568; margin-top: 0.2rem; }
+
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    thead th {
+      background: #0f1117;
+      color: #718096;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.6rem 0.9rem;
+      text-align: left;
+      border-bottom: 1px solid #2d3748;
+      position: sticky;
+      top: 0;
+    }
+    tbody tr {
+      border-bottom: 1px solid #1e2535;
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: #1a1d2e; }
+    tbody td { padding: 0.6rem 0.9rem; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 99px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .badge-dl { background: #1a365d; color: #63b3ed; }
+    .badge-ul { background: #1a202c; color: #68d391; }
+    .badge-ping { background: #2d1e00; color: #f6ad55; }
+
+    .no-results {
+      text-align: center;
+      padding: 3rem;
+      color: #4a5568;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 700px) {
+      .controls { grid-template-columns: 1fr; }
+      .summary-cards { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">⚡ Speedtest GUI</div>
+    <div class="subtitle">Test Speedtest.net servers by country &amp; operator</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Control Panel -->
+  <div class="panel">
+    <h2>Configuration</h2>
+    <div class="controls">
+      <div class="field">
+        <label for="sel-country">Country</label>
+        <select id="sel-country">
+          <option value="">— Select country —</option>
+          {% for c in countries %}
+          <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="sel-sponsor">Operator / Sponsor</label>
+        <select id="sel-sponsor" disabled>
+          <option value="">— All operators —</option>
+        </select>
+      </div>
+      <button class="btn-run" id="btn-run" disabled>▶ Run Test</button>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="panel">
+      <div class="progress-header">
+        <span class="progress-label" id="prog-label">Initializing…</span>
+        <span class="progress-count" id="prog-count">0 / 0</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="prog-bar"></div>
+      </div>
+      <div class="current-server" id="prog-server"></div>
+      <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-panel panel" id="results-panel">
+    <h2>Results</h2>
+    <div class="summary-cards" id="summary-cards">
+      <div class="card">
+        <div class="card-label">Servers Tested</div>
+        <div class="card-value" id="stat-total">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg Download</div>
+        <div class="card-value" id="stat-dl">—</div>
+        <div class="card-unit">Mbps</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg Upload</div>
+        <div class="card-value" id="stat-ul">—</div>
+        <div class="card-unit">Mbps</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg Ping</div>
+        <div class="card-value" id="stat-ping">—</div>
+        <div class="card-unit">ms</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>City, CC</th>
+            <th>Sponsor / Operator</th>
+            <th>Ping</th>
+            <th>Download</th>
+            <th>Upload</th>
+            <th>Host</th>
+          </tr>
+        </thead>
+        <tbody id="results-tbody">
+          <tr><td colspan="7" class="no-results">No results yet. Run a test above.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  const selCountry = document.getElementById('sel-country');
+  const selSponsor = document.getElementById('sel-sponsor');
+  const btnRun     = document.getElementById('btn-run');
+  const progWrap   = document.getElementById('progress-wrap');
+  const progLabel  = document.getElementById('prog-label');
+  const progCount  = document.getElementById('prog-count');
+  const progBar    = document.getElementById('prog-bar');
+  const progServer = document.getElementById('prog-server');
+  const logBox     = document.getElementById('log-box');
+  const resultsPanel = document.getElementById('results-panel');
+  const tbody      = document.getElementById('results-tbody');
+
+  let allResults   = [];
+  let rowIndex     = 0;
+
+  // ── Country change → load sponsors ──────────────────────────────────────
+  selCountry.addEventListener('change', async () => {
+    const country = selCountry.value;
+    selSponsor.disabled = true;
+    selSponsor.innerHTML = '<option value="">Loading…</option>';
+    btnRun.disabled = true;
+
+    if (!country) {
+      selSponsor.innerHTML = '<option value="">— All operators —</option>';
+      return;
+    }
+
+    const res  = await fetch(`/api/sponsors?country=${encodeURIComponent(country)}`);
+    const list = await res.json();
+
+    selSponsor.innerHTML = '<option value="">— All operators —</option>';
+    list.forEach(sp => {
+      const opt = document.createElement('option');
+      opt.value = sp;
+      opt.textContent = sp;
+      selSponsor.appendChild(opt);
+    });
+
+    selSponsor.disabled = false;
+    btnRun.disabled = false;
+  });
+
+  // ── Run button ───────────────────────────────────────────────────────────
+  btnRun.addEventListener('click', startTest);
+
+  async function startTest() {
+    const country = selCountry.value;
+    const sponsor = selSponsor.value;
+
+    if (!country && !sponsor) {
+      alert('Please select at least a country.');
+      return;
+    }
+
+    // reset UI
+    allResults = [];
+    rowIndex   = 0;
+    tbody.innerHTML = '';
+    resultsPanel.classList.remove('active');
+    progWrap.classList.add('active');
+    logBox.innerHTML = '';
+    progBar.style.width = '0%';
+    progCount.textContent = '0 / ?';
+    progLabel.textContent = 'Starting…';
+    progServer.textContent = '';
+    btnRun.disabled = true;
+    selCountry.disabled = true;
+    selSponsor.disabled = true;
+
+    // start job
+    const startRes = await fetch('/api/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country, sponsor }),
+    });
+    const { job_id, error } = await startRes.json();
+    if (error) { addLog('error', error); return; }
+
+    // listen to SSE stream
+    const es = new EventSource(`/api/stream/${job_id}`);
+
+    es.addEventListener('info', e => {
+      const d = JSON.parse(e.data);
+      addLog('info', d.message);
+      progLabel.textContent = d.message;
+    });
+
+    es.addEventListener('progress', e => {
+      const d = JSON.parse(e.data);
+      const pct = Math.round((d.current / d.total) * 100);
+      progBar.style.width = pct + '%';
+      progCount.textContent = `${d.current} / ${d.total}`;
+      progLabel.textContent = `Testing server ${d.current} of ${d.total}`;
+      progServer.textContent = '→ ' + d.server;
+    });
+
+    es.addEventListener('result', e => {
+      const d = JSON.parse(e.data);
+      allResults.push(d);
+      appendRow(d);
+      updateStats();
+      resultsPanel.classList.add('active');
+    });
+
+    es.addEventListener('failed', e => {
+      const d = JSON.parse(e.data);
+      addLog('warn', `FAILED: ${d.server} — ${d.error}`);
+    });
+
+    es.addEventListener('error', e => {
+      const d = JSON.parse(e.data);
+      addLog('error', d.message || 'Unknown error');
+    });
+
+    es.addEventListener('saved', e => {
+      const d = JSON.parse(e.data);
+      addLog('info', `Results saved → ${d.file}`);
+    });
+
+    es.addEventListener('done', e => {
+      const d = JSON.parse(e.data);
+      progLabel.textContent = `Done! ${d.total} servers tested.`;
+      progServer.textContent = '';
+      addLog('info', `✓ Finished. ${d.total} results.`);
+      es.close();
+      btnRun.disabled = false;
+      selCountry.disabled = false;
+      selSponsor.disabled = false;
+    });
+
+    es.onerror = () => {
+      addLog('error', 'Stream connection lost.');
+      es.close();
+      btnRun.disabled = false;
+      selCountry.disabled = false;
+      selSponsor.disabled = false;
+    };
+  }
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function appendRow(r) {
+    rowIndex++;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:#4a5568">${rowIndex}</td>
+      <td><strong>${esc(r.city)}</strong>, ${esc(r.cc)}</td>
+      <td>${esc(r.sponsor)}</td>
+      <td><span class="badge badge-ping">${r.ping_ms} ms</span></td>
+      <td><span class="badge badge-dl">${r.download_mbps} Mbps</span></td>
+      <td><span class="badge badge-ul">${r.upload_mbps} Mbps</span></td>
+      <td style="color:#4a5568;font-size:0.75rem">${esc(r.host)}</td>
+    `;
+    tbody.appendChild(tr);
+    tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function updateStats() {
+    document.getElementById('stat-total').textContent = allResults.length;
+    const avg = (key) => (allResults.reduce((s, r) => s + r[key], 0) / allResults.length).toFixed(2);
+    document.getElementById('stat-dl').textContent   = avg('download_mbps');
+    document.getElementById('stat-ul').textContent   = avg('upload_mbps');
+    document.getElementById('stat-ping').textContent = avg('ping_ms');
+  }
+
+  function addLog(type, msg) {
+    const line = document.createElement('div');
+    line.className = type === 'error' ? 'log-err' : type === 'warn' ? 'log-warn' : 'log-info';
+    const ts = new Date().toLocaleTimeString();
+    line.textContent = `[${ts}] ${msg}`;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function esc(str) {
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>

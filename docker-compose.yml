@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  speedtest-gui:
+    build: .
+    container_name: speedtest-gui
+    ports:
+      - "5000:5000"
+    volumes:
+      # persist test results on host
+      - ./results:/app/results
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
